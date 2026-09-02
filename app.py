@@ -6,7 +6,7 @@ import re
 
 st.set_page_config(page_title="Organizador de Cifras & Repertório", page_icon="🎸", layout="centered")
 
-# --- ESTILO VISUAL (COMPACTO E LADO A LADO NO CELULAR) ---
+# --- ESTILO VISUAL COMPACTO ---
 st.markdown("""
     <style>
     /* Fundo geral da aplicação */
@@ -30,15 +30,16 @@ st.markdown("""
         font-size: 16px;
     }
     
-    /* Ajuste para os botões ficarem compactos */
+    /* Ajuste para os botões ficarem bem compactos */
     .stButton button {
         background-color: #1f1f1f !important;
         color: #ffffff !important;
         border: 1px solid #444444 !important;
         border-radius: 4px;
-        padding: 2px 8px !important;
-        font-size: 13px !important;
-        min-height: 32px !important;
+        padding: 2px 6px !important;
+        font-size: 12px !important;
+        min-height: 28px !important;
+        width: 100% !important;
     }
     .stButton button:hover {
         background-color: #333333 !important;
@@ -52,16 +53,16 @@ st.markdown("""
         border: 1px solid #444444 !important;
     }
 
-    /* FORÇAR COLUNAS A FICAREM LADO A LADO NO CELULAR */
+    /* FORÇAR AS COLUNAS A FICAREM SEMPRE LADO A LADO NO CELULAR */
     @media (max-width: 768px) {
-        [data-testid="stHorizontalBlock"] {
+        div.row-widget.stHorizontal {
             display: flex !important;
             flex-direction: row !important;
             align-items: center !important;
         }
-        [data-testid="column"] {
-            width: unset !important;
-            flex: 1 1 0 !important;
+        div.stColumn {
+            width: auto !important;
+            flex: 1 1 auto !important;
             min-width: 0 !important;
         }
     }
@@ -406,21 +407,25 @@ elif escolha == "📂 Pastas":
                 
                 if folder_songs:
                     for s_id, title, artist, tone in folder_songs:
-                        # Layout super compacto lado a lado
-                        col_txt, col_play, col_del = st.columns([4, 1.2, 1.2])
-                        col_txt.markdown(f"<p style='font-size:14px; margin:0; line-height:32px;'>🎵 <b>{title}</b> - {artist}</p>", unsafe_allow_html=True)
-                        if col_play.button("▶ Tocar", key=f"play_folder_song_{s_id}"):
-                            st.session_state['selected_song_to_play'] = s_id
-                            st.session_state['redirect_to_play'] = True
-                            st.rerun()
-                        if col_del.button("🗑 Excluir", key=f"del_folder_song_{s_id}"):
-                            conn = get_db_connection()
-                            cursor = conn.cursor()
-                            cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))
-                            conn.commit()
-                            conn.close()
-                            st.success("Música excluída!")
-                            st.rerun()
+                        # 4 colunas na mesma linha: [Texto da música, Botão Tocar, Botão Excluir]
+                        col_txt, col_play, col_del = st.columns([5, 1.3, 1.3])
+                        col_txt.markdown(f"<p style='font-size:13px; margin:0; line-height:30px;'>🎵 <b>{title}</b> - {artist} <span style='color:#aaa;'>(<b>{tone or 'C'}</b>)</span></p>", unsafe_allow_html=True)
+                        
+                        with col_play:
+                            if st.button("▶ Tocar", key=f"play_folder_song_{s_id}"):
+                                st.session_state['selected_song_to_play'] = s_id
+                                st.session_state['redirect_to_play'] = True
+                                st.rerun()
+                                
+                        with col_del:
+                            if st.button("🗑 Excluir", key=f"del_folder_song_{s_id}"):
+                                conn = get_db_connection()
+                                cursor = conn.cursor()
+                                cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))
+                                conn.commit()
+                                conn.close()
+                                st.success("Música excluída!")
+                                st.rerun()
                 else:
                     st.info("Nenhuma música nesta pasta.")
                 
@@ -458,22 +463,24 @@ elif escolha == "📚 Lista Geral":
                 if f_id == folder_id:
                     folder_label = f_name
             
-            # Layout compacto lado a lado na lista geral também
-            col_info, col_play, col_del = st.columns([4, 1.2, 1.2])
-            col_info.markdown(f"<p style='font-size:14px; margin:0; line-height:32px;'>🎵 <b>{title}</b> - {artist}</p>", unsafe_allow_html=True)
+            # Mesmo layout compacto na lista geral
+            col_info, col_play, col_del = st.columns([5, 1.3, 1.3])
+            col_info.markdown(f"<p style='font-size:13px; margin:0; line-height:30px;'>🎵 <b>{title}</b> - {artist} <span style='color:#aaa;'>(<b>{tone or 'C'}</b> | 📂 {folder_label})</span></p>", unsafe_allow_html=True)
             
-            if col_play.button("▶ Tocar", key=f"play_song_{s_id}"):
-                st.session_state['selected_song_to_play'] = s_id
-                st.session_state['redirect_to_play'] = True
-                st.rerun()
-                
-            if col_del.button("🗑 Excluir", key=f"del_song_{s_id}"):
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))
-                conn.commit()
-                conn.close()
-                st.success("Música excluída!")
-                st.rerun()
+            with col_play:
+                if st.button("▶ Tocar", key=f"play_song_{s_id}"):
+                    st.session_state['selected_song_to_play'] = s_id
+                    st.session_state['redirect_to_play'] = True
+                    st.rerun()
+                    
+            with col_del:
+                if st.button("🗑 Excluir", key=f"del_song_{s_id}"):
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))
+                    conn.commit()
+                    conn.close()
+                    st.success("Música excluída!")
+                    st.rerun()
     else:
         st.info("Nenhuma música cadastrada no sistema.")

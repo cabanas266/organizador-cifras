@@ -74,7 +74,6 @@ def transpose_content_text(content, semitones):
     
     for line in lines:
         words = line.split()
-        new_words = []
         is_chord_line = False
         
         if words:
@@ -101,7 +100,7 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- SCRAPER DO CIFRA CLUB (COM SUPORTE A VERSÕES) ---
+# --- SCRAPER DO CIFRA CLUB ---
 def fetch_cifraclub(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -111,17 +110,14 @@ def fetch_cifraclub(url):
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Tenta pegar pelas tags HTML oficiais da página
         title_tag = soup.find('h1', class_='t1') or soup.find('h1', class_='cnt-head-title')
         artist_tag = soup.find('h2', class_='t3') or soup.find('h2', class_='cnt-head-sub-title')
         
         title = title_tag.text.strip() if title_tag else ""
         artist = artist_tag.text.strip() if artist_tag else ""
         
-        # Fallback inteligente extraindo e limpando da URL caso as tags mude ou seja versão
         if not title or not artist or "html" in title.lower():
             parts = [p for p in url.strip('/').split('/') if p]
-            # Remove sufixos comuns de versões como 'simplificada.html', 'index.html', etc.
             if parts and (parts[-1].endswith('.html') or parts[-1] in ['simplificada', 'baixo', 'teclado', 'ukulele']):
                 parts.pop()
                 
@@ -144,12 +140,26 @@ def fetch_cifraclub(url):
     except Exception as e:
         return None, None, None, f"Erro na importação: {str(e)}"
 
+# --- CONTROLE DE NAVEGAÇÃO POR ESTADO ---
+if 'nav_menu' not in st.session_state:
+    st.session_state['nav_menu'] = "Visualizar / Tocar"
+
+if 'selected_song_to_play' not in st.session_state:
+    st.session_state['selected_song_to_play'] = None
+
 # --- MENU LATERAL ---
 st.sidebar.title("🎸 Cifras & Repertório")
-menu = st.sidebar.radio(
-    "Navegação",
-    ["Visualizar / Tocar", "Adicionar / Importar Cifra", "Gerenciar Pastas", "Lista Geral"]
-)
+menu_options = ["Visualizar / Tocar", "Adicionar / Importar Cifra", "Gerenciar Pastas", "Lista Geral"]
+
+# Sincroniza o rádio com o estado da sessão se alterado via botões internos
+current_index = menu_options.index(st.session_state['nav_menu']) if st.session_state['nav_menu'] in menu_options else 0
+chosen_menu = st.sidebar.radio("Navegação", menu_options, index=current_index)
+
+if chosen_menu != st.session_state['nav_menu']:
+    st.session_state['nav_menu'] = chosen_menu
+    st.rerun()
+
+menu = st.session_state['nav_menu']
 
 conn = get_db_connection()
 cursor = conn.cursor()
@@ -171,8 +181,20 @@ if menu == "Visualizar / Tocar":
     if not songs:
         st.info("Nenhuma cifra cadastrada ainda. Vá em 'Adicionar / Importar Cifra' no menu lateral.")
     else:
-        song_dict = {f"{s[1]} - {s[2]}": s for s in songs}
-        selected_song_name = st.selectbox("Escolher Música", list(song_dict.keys()))
+        song_dict = {f"{s[1]} - {s[2]} (ID: {s[0]})": s for s in songs}
+        song_names = list(song_dict.keys())
+        
+        # Tenta selecionar automaticamente se veio de um clique externo
+        default_idx = 0
+        if st.session_state['selected_song_to_play']:
+            for idx, name in enumerate(song_names):
+                if f"ID: {st.session_state['selected_song_to_play']})" in name:
+                    default_idx = idx
+                    break
+            # Limpa para não travar a seleção manual depois
+            st.session_state['selected_song_to_play'] = None
+            
+        selected_song_name = st.selectbox("Escolher Música", song_names, index=default_idx)
         
         s_id, title, artist, orig_tone, content, folder_id = song_dict[selected_song_name]
         
@@ -303,20 +325,44 @@ elif menu == "Gerenciar Pastas":
             st.warning("Digite um nome válido.")
             
     st.markdown("---")
-    st.subheader("Pastas Existentes")
+    st.subheader("Pastas Existentes e Músicas Vinculadas")
     if folders:
         for f_id, f_name in folders:
-            col1, col2 = st.columns([3, 1])
-            col1.write(f"📁 **{f_name}**")
-            if col2.button("Apagar Pasta", key=f"del_folder_{f_id}"):
+            with st.expander(f"📁 {f_name}"):
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                cursor.execute("UPDATE songs SET folder_id = NULL WHERE folder_id = ?", (f_id,))
-                cursor.execute("DELETE FROM folders WHERE id = ?", (f_id,))
-                conn.commit()
+                cursor.execute("SELECT id, title, artist, original_tone FROM songs WHERE folder_id = ? ORDER BY title ASC", (f_id,))
+                folder_songs = cursor.fetchall()
                 conn.close()
-                st.success("Pasta removida!")
-                st.rerun()
+                
+                if folder_songs:
+                    for s_id, title, artist, tone in folder_songs:
+                        col_txt, col_play, col_del = st.columns([3, 1, 1])
+                        col_txt.write(f"🎵 **{title}** - *{artist}* (Tom: {tone or 'C'})")
+                        if col_play.button("Tocar", key=f"play_folder_song_{s_id}"):
+                            st.session_state['selected_song_to_play'] = s_id
+                            st.session_state['nav_menu'] = "Visualizar / Tocar"
+                            st.rerun()
+                        if col_del.button("Excluir", key=f"del_folder_song_{s_id}"):
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))
+                            conn.commit()
+                            conn.close()
+                            st.success("Música excluída!")
+                            st.rerun()
+                else:
+                    st.info("Nenhuma música nesta pasta.")
+                
+                if st.button("Apagar Pasta Inteira", key=f"del_folder_{f_id}"):
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE songs SET folder_id = NULL WHERE folder_id = ?", (f_id,))
+                    cursor.execute("DELETE FROM folders WHERE id = ?", (f_id,))
+                    conn.commit()
+                    conn.close()
+                    st.success("Pasta removida!")
+                    st.rerun()
     else:
         st.info("Nenhuma pasta criada ainda.")
 
@@ -342,8 +388,14 @@ elif menu == "Lista Geral":
                 if f_id == folder_id:
                     folder_label = f_name
             
-            col_info, col_del = st.columns([4, 1])
+            col_info, col_play, col_del = st.columns([3, 1, 1])
             col_info.write(f"🎵 **{title}** - *{artist}* (Tom: {tone or 'C'} | 📂 {folder_label})")
+            
+            if col_play.button("Tocar", key=f"play_song_{s_id}"):
+                st.session_state['selected_song_to_play'] = s_id
+                st.session_state['nav_menu'] = "Visualizar / Tocar"
+                st.rerun()
+                
             if col_del.button("Excluir", key=f"del_song_{s_id}"):
                 conn = get_db_connection()
                 cursor = conn.cursor()

@@ -201,8 +201,8 @@ def fetch_cifraclub(url):
 if 'selected_song_to_play' not in st.session_state:
     st.session_state['selected_song_to_play'] = None
 
-if 'active_tab' not in st.session_state:
-    st.session_state['active_tab'] = 0
+if 'menu_opcao' not in st.session_state:
+    st.session_state['menu_opcao'] = "🎵 Palco / Tocar"
 
 # --- BUSCAR PASTAS DO BANCO ---
 conn = get_db_connection()
@@ -215,12 +215,20 @@ conn.close()
 # --- TÍTULO PRINCIPAL DO APP ---
 st.title("🎸 Cifras & Repertório")
 
-# --- MENU EM ABAS NO TOPO (Com controle de aba ativa) ---
-tab_names = ["🎵 Palco / Tocar", "📥 Adicionar Cifra", "📂 Pastas", "📚 Lista Geral"]
-tabs = st.tabs(tab_names)
+# --- MENU SUPERIOR DINÂMICO ---
+menu_options = ["🎵 Palco / Tocar", "📥 Adicionar Cifra", "📂 Pastas", "📚 Lista Geral"]
+
+# Se houver uma música selecionada para tocar, força a seleção do menu para o Palco
+if st.session_state.get('redirect_to_play', False):
+    st.session_state['menu_opcao'] = "🎵 Palco / Tocar"
+    st.session_state['redirect_to_play'] = False
+
+escolha = st.radio("Navegação", menu_options, horizontal=True, key="menu_opcao")
+
+st.markdown("---")
 
 # ----------------- ABA 1: VISUALIZAR / TOCAR -----------------
-with tabs[0]:
+if escolha == "🎵 Palco / Tocar":
     st.header("Palco / Ensaio")
     
     conn = get_db_connection()
@@ -289,7 +297,7 @@ with tabs[0]:
         st.code(transposed_content, language="text")
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------
-with tabs[1]:
+elif escolha == "📥 Adicionar Cifra":
     st.header("Adicionar Cifra")
     
     import_type = st.radio("Método de Cadastro", ["Importar do Cifra Club (Link)", "Digitar / Colar Manualmente"], horizontal=True)
@@ -353,7 +361,7 @@ with tabs[1]:
                 st.warning("Preencha o título e o conteúdo da cifra.")
 
 # ----------------- ABA 3: GERENCIAR PASTAS -----------------
-with tabs[2]:
+elif escolha == "📂 Pastas":
     st.header("Gerenciar Pastas / Repertórios")
     
     new_folder_name = st.text_input("Nome da Nova Pasta (ex: Show Acústico, Reggae)")
@@ -386,6 +394,7 @@ with tabs[2]:
                         col_txt.write(f"🎵 **{title}** - *{artist}* (Tom: {tone or 'C'})")
                         if col_play.button("Tocar", key=f"play_folder_song_{s_id}"):
                             st.session_state['selected_song_to_play'] = s_id
+                            st.session_state['redirect_to_play'] = True
                             st.rerun()
                         if col_del.button("Excluir", key=f"del_folder_song_{s_id}"):
                             conn = get_db_connection()
@@ -411,7 +420,7 @@ with tabs[2]:
         st.info("Nenhuma pasta criada ainda.")
 
 # ----------------- ABA 4: LISTA GERAL -----------------
-with tabs[3]:
+elif escolha == "📚 Lista Geral":
     st.header("Lista Geral de Músicas")
     
     sort_by = st.radio("Ordenar por:", ["Ordem Alfabética de Música", "Ordem Alfabética de Artist"], horizontal=True)
@@ -437,6 +446,7 @@ with tabs[3]:
             
             if col_play.button("Tocar", key=f"play_song_{s_id}"):
                 st.session_state['selected_song_to_play'] = s_id
+                st.session_state['redirect_to_play'] = True
                 st.rerun()
                 
             if col_del.button("Excluir", key=f"del_song_{s_id}"):

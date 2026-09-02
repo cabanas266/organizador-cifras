@@ -123,11 +123,9 @@ def format_chords_html(content):
         if is_chord_line:
             new_line = line
             for word in words:
-                # Regex para encontrar acordes isolados mantendo espaços intactos
                 m = re.match(r'^([^\w]*)([A-G][b#]?[m°0-9sus4addmaj8/-]*)([^\w]*)$', word)
                 if m:
                     prefix, chord, suffix = m.groups()
-                    # Substitui o acorde por uma tag HTML estilizada (Negrito + Cor Azul/Ciano destacada)
                     styled_chord = f'<strong style="color: #00b4d8; font-size: 1.05em;">{chord}</strong>'
                     replacement = f"{prefix}{styled_chord}{suffix}"
                     new_line = new_line.replace(word, replacement, 1)
@@ -135,11 +133,10 @@ def format_chords_html(content):
         else:
             formatted_lines.append(line)
             
-    final_html = "<br>".join(formatted_lines)
-    # Exibe dentro de um bloco preformatado com fundo ajustado e rolagem limpa
+    final_html = "\n".join(formatted_lines)
     return f"""
     <div style="background-color: rgba(128, 128, 128, 0.08); padding: 15px; border-radius: 8px; overflow-x: auto;">
-        <pre style="font-family: 'Courier New', Courier, monospace; font-size: 14px; line-height: 1.4; margin: 0;">{final_html}</pre>
+        <pre style="font-family: 'Courier New', Courier, monospace; font-size: 14px; line-height: 1.4; margin: 0; white-space: pre; color: inherit;">{final_html}</pre>
     </div>
     """
 
@@ -289,7 +286,6 @@ if menu == "Visualizar / Tocar":
         transposed_content = transpose_content_text(content, current_trans)
         
         st.markdown("---")
-        # Exibe a cifra com os acordes destacados e coloridos, preservando o alinhamento
         st.markdown(format_chords_html(transposed_content), unsafe_allow_html=True)
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------

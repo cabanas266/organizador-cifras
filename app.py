@@ -6,7 +6,7 @@ import re
 
 st.set_page_config(page_title="Organizador de Cifras & Repertório", page_icon="🎸", layout="centered")
 
-# --- ESTILO VISUAL CORRIGIDO (FUNDO PRETO, ELEMENTOS VISÍVEIS) ---
+# --- ESTILO VISUAL (FUNDO PRETO E ELEMENTOS VISÍVEIS) ---
 st.markdown("""
     <style>
     /* Fundo geral da aplicação */
@@ -30,15 +30,7 @@ st.markdown("""
         font-size: 16px;
     }
     
-    /* Barra lateral */
-    section[data-testid="stSidebar"] {
-        background-color: #050505;
-    }
-    section[data-testid="stSidebar"] * {
-        color: #ffffff !important;
-    }
-    
-    /* Ajuste para os botões (para não ficarem brancos sumindo com o texto) */
+    /* Ajuste para os botões */
     .stButton button {
         background-color: #1f1f1f !important;
         color: #ffffff !important;
@@ -127,7 +119,6 @@ def transpose_content_text(content, semitones):
     
     for line in lines:
         words = line.split()
-        new_words = []
         is_chord_line = False
         
         if words:
@@ -154,7 +145,7 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- SCRAPER DO CIFRA CLUB CORRIGIDO ---
+# --- SCRAPER DO CIFRA CLUB ---
 def fetch_cifraclub(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -206,26 +197,14 @@ def fetch_cifraclub(url):
     except Exception as e:
         return None, None, None, f"Erro na importação: {str(e)}"
 
-# --- CONTROLE DE NAVEGAÇÃO POR ESTADO ---
-if 'nav_menu' not in st.session_state:
-    st.session_state['nav_menu'] = "Visualizar / Tocar"
-
+# --- CONTROLE DE ESTADOS ---
 if 'selected_song_to_play' not in st.session_state:
     st.session_state['selected_song_to_play'] = None
 
-# --- MENU LATERAL ---
-st.sidebar.title("🎸 Cifras & Repertório")
-menu_options = ["Visualizar / Tocar", "Adicionar / Importar Cifra", "Gerenciar Pastas", "Lista Geral"]
+if 'active_tab' not in st.session_state:
+    st.session_state['active_tab'] = 0
 
-current_index = menu_options.index(st.session_state['nav_menu']) if st.session_state['nav_menu'] in menu_options else 0
-chosen_menu = st.sidebar.radio("Navegação", menu_options, index=current_index)
-
-if chosen_menu != st.session_state['nav_menu']:
-    st.session_state['nav_menu'] = chosen_menu
-    st.rerun()
-
-menu = st.session_state['nav_menu']
-
+# --- BUSCAR PASTAS DO BANCO ---
 conn = get_db_connection()
 cursor = conn.cursor()
 cursor.execute("SELECT id, name FROM folders")
@@ -233,9 +212,16 @@ folders = cursor.fetchall()
 folder_dict = {f[1]: f[0] for f in folders}
 conn.close()
 
+# --- TÍTULO PRINCIPAL DO APP ---
+st.title("🎸 Cifras & Repertório")
+
+# --- MENU EM ABAS NO TOPO (Perfeito para Celular e PC) ---
+tab_names = ["🎵 Palco / Tocar", "📥 Adicionar Cifra", "📂 Pastas", "📚 Lista Geral"]
+tabs = st.tabs(tab_names)
+
 # ----------------- ABA 1: VISUALIZAR / TOCAR -----------------
-if menu == "Visualizar / Tocar":
-    st.header("🎵 Palco / Ensaio")
+with tabs[0]:
+    st.header("Palco / Ensaio")
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -244,7 +230,7 @@ if menu == "Visualizar / Tocar":
     conn.close()
     
     if not songs:
-        st.info("Nenhuma cifra cadastrada ainda. Vá em 'Adicionar / Importar Cifra' no menu lateral.")
+        st.info("Nenhuma cifra cadastrada ainda. Vá na aba 'Adicionar Cifra'.")
     else:
         song_dict = {f"{s[1]} - {s[2]} (ID: {s[0]})": s for s in songs}
         song_names = list(song_dict.keys())
@@ -303,17 +289,17 @@ if menu == "Visualizar / Tocar":
         st.code(transposed_content, language="text")
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------
-elif menu == "Adicionar / Importar Cifra":
-    st.header("📥 Adicionar Cifra")
+with tabs[1]:
+    st.header("Adicionar Cifra")
     
-    import_type = st.radio("Método de Cadastro", ["Importar do Cifra Club (Link)", "Digitar / Colar Manualmente"])
+    import_type = st.radio("Método de Cadastro", ["Importar do Cifra Club (Link)", "Digitar / Colar Manualmente"], horizontal=True)
     
     folder_names = ["Nenhuma (Geral)"] + list(folder_dict.keys())
     selected_folder = st.selectbox("Salvar na Pasta / Repertório", folder_names)
     target_folder_id = folder_dict.get(selected_folder) if selected_folder != "Nenhuma (Geral)" else None
     
     if import_type == "Importar do Cifra Club (Link)":
-        url_input = st.text_input("Cole o link da música do Cifra Club (ex: https://www.cifraclub.com.br/artista/musica/)")
+        url_input = st.text_input("Cole o link da música do Cifra Club")
         if st.button("Puxar Cifra da Web"):
             if url_input.strip():
                 with st.spinner("Buscando dados no Cifra Club..."):
@@ -367,10 +353,10 @@ elif menu == "Adicionar / Importar Cifra":
                 st.warning("Preencha o título e o conteúdo da cifra.")
 
 # ----------------- ABA 3: GERENCIAR PASTAS -----------------
-elif menu == "Gerenciar Pastas":
-    st.header("📂 Gerenciar Pastas / Repertórios de Shows")
+with tabs[2]:
+    st.header("Gerenciar Pastas / Repertórios")
     
-    new_folder_name = st.text_input("Nome da Nova Pasta (ex: Show Acústico, Reggae Night)")
+    new_folder_name = st.text_input("Nome da Nova Pasta (ex: Show Acústico, Reggae)")
     if st.button("Criar Pasta"):
         if new_folder_name.strip():
             conn = get_db_connection()
@@ -400,7 +386,6 @@ elif menu == "Gerenciar Pastas":
                         col_txt.write(f"🎵 **{title}** - *{artist}* (Tom: {tone or 'C'})")
                         if col_play.button("Tocar", key=f"play_folder_song_{s_id}"):
                             st.session_state['selected_song_to_play'] = s_id
-                            st.session_state['nav_menu'] = "Visualizar / Tocar"
                             st.rerun()
                         if col_del.button("Excluir", key=f"del_folder_song_{s_id}"):
                             conn = get_db_connection()
@@ -426,10 +411,10 @@ elif menu == "Gerenciar Pastas":
         st.info("Nenhuma pasta criada ainda.")
 
 # ----------------- ABA 4: LISTA GERAL -----------------
-elif menu == "Lista Geral":
-    st.header("📚 Lista Geral de Músicas")
+with tabs[3]:
+    st.header("Lista Geral de Músicas")
     
-    sort_by = st.radio("Ordenar por:", ["Ordem Alfabética de Música", "Ordem Alfabética de Artista"], horizontal=True)
+    sort_by = st.radio("Ordenar por:", ["Ordem Alfabética de Música", "Ordem Alfabética de Artist"], horizontal=True)
     order_query = "ORDER BY title ASC" if sort_by == "Ordem Alfabética de Música" else "ORDER BY artist ASC"
     
     conn = get_db_connection()
@@ -452,7 +437,6 @@ elif menu == "Lista Geral":
             
             if col_play.button("Tocar", key=f"play_song_{s_id}"):
                 st.session_state['selected_song_to_play'] = s_id
-                st.session_state['nav_menu'] = "Visualizar / Tocar"
                 st.rerun()
                 
             if col_del.button("Excluir", key=f"del_song_{s_id}"):

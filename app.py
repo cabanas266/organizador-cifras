@@ -101,19 +101,6 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- VISUALIZADOR LIMPO MODO PALCO (SEM ERRO DE CORES NA LETRA) ---
-def format_chord_html(content):
-    # Escapa caracteres especiais do HTML com segurança total
-    safe_content = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    
-    # Caixa estilo "Modo Palco" profissional com fundo escuro, texto claríssimo e fonte monoespaçada perfeita
-    html_output = f"""
-    <div style="background-color: #121212; color: #F5F5F5; padding: 20px; border-radius: 10px; font-family: monospace; font-size: 15px; line-height: 1.5; overflow-x: auto; white-space: pre;">
-{safe_content}
-    </div>
-    """
-    return html_output
-
 # --- SCRAPER DO CIFRA CLUB ---
 def fetch_cifraclub(url):
     try:
@@ -245,7 +232,8 @@ if menu == "Visualizar / Tocar":
         transposed_content = transpose_content_text(content, current_trans)
         
         st.markdown("---")
-        st.markdown(format_chord_html(transposed_content), unsafe_allow_html=True)
+        # Exibe a cifra perfeitamente alinhada sem erros de HTML
+        st.code(transposed_content, language="text")
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------
 elif menu == "Adicionar / Importar Cifra":

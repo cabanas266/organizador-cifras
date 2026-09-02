@@ -41,9 +41,7 @@ def get_db_connection():
     return sqlite3.connect("cifras_control.db")
 
 # --- ESCALA MUSICAL PARA TRANSPOSIÇÃO ---
-# Usamos sustenidos como padrão base
 NOTES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-# Mapeamento para equivalências e bemóis comuns
 FLAT_TO_SHARP = {'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#'}
 
 def normalize_note(note):
@@ -53,7 +51,6 @@ def normalize_note(note):
     return note
 
 def transpose_chord(chord, semitones):
-    # Regex para extrair a nota base do acorde (ex: Am7 -> A, F#m -> F#, Bb7M -> Bb)
     match = re.match(r'^([A-G][b#]?)', chord)
     if not match:
         return chord
@@ -68,20 +65,16 @@ def transpose_chord(chord, semitones):
     new_idx = (idx + semitones) % 12
     new_root = NOTES_SHARP[new_idx]
     
-    # Substitui a raiz antiga pela nova mantendo o restante do acorde (ex: m7, 7M)
     return chord.replace(root, new_root, 1)
 
 def transpose_content_text(content, semitones):
     if semitones == 0:
         return content
     
-    # Se a cifra estiver em tags <pre> ou formato texto, procuramos acordes isolados ou entre colchetes/espaços
-    # Uma estratégia robusta para texto plano de cifras é transpor palavras que pareçam acordes válidos
     lines = content.split('\n')
     new_lines = []
     
     for line in lines:
-        # Tenta identificar linhas de acordes (geralmente contêm muitos espaços e acordes padrão)
         words = line.split()
         new_words = []
         is_chord_line = False
@@ -97,9 +90,7 @@ def transpose_content_text(content, semitones):
         
         if is_chord_line:
             new_line = line
-            # Substitui tokens que parecem acordes na linha
             for word in words:
-                # Remove pontuação leve ao redor para transpor
                 m = re.match(r'^([^\w]*)([A-G][b#]?[m°0-9sus4addmaj8/-]*)([^\w]*)$', word)
                 if m:
                     prefix, chord, suffix = m.groups()
@@ -122,21 +113,17 @@ def fetch_cifraclub(url):
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Tenta pegar Título e Artista
         title_tag = soup.find('h1', class_='cnt-head-title')
         artist_tag = soup.find('h2', class_='cnt-head-sub-title')
         
         title = title_tag.text.strip() if title_tag else "Desconhecido"
         artist = artist_tag.text.strip() if artist_tag else "Desconhecido"
         
-        # Tenta pegar o tom original
         tone_tag = soup.find('a', class_='js-cifra-tone')
         original_tone = tone_tag.text.strip() if tone_tag else "C"
         
-        # Pega a cifra dentro da tag <pre>
         pre_tag = soup.find('pre')
         if pre_tag:
-            # Remove tags internas se houver
             content = pre_tag.get_text()
         else:
             return None, None, None, "Não foi possível encontrar a estrutura da cifra nesta página."
@@ -177,7 +164,6 @@ if menu == "Visualizar / Tocar":
         
         s_id, title, artist, orig_tone, content, folder_id = song_dict[selected_song_name]
         
-        # Encontra nome da pasta
         folder_name = "Geral"
         for f_name, f_id in folder_dict.items():
             if f_id == folder_id:
@@ -186,7 +172,6 @@ if menu == "Visualizar / Tocar":
         st.subheader(f"{title} - *{artist}*")
         st.caption(f"📂 Pasta: {folder_name} | Tom Original: **{orig_tone or 'C'}**")
         
-        # Controles de Transposição
         col1, col2, col3 = st.columns([1, 1, 2])
         
         with col1:
@@ -200,7 +185,6 @@ if menu == "Visualizar / Tocar":
             
         current_trans = st.session_state.get(f"trans_{s_id}", 0)
         
-        # Cálculo se escolheu tom direto
         if chosen_tone != "Original" and orig_tone:
             norm_orig = normalize_note(orig_tone)
             norm_chosen = normalize_note(chosen_tone)
@@ -213,11 +197,10 @@ if menu == "Visualizar / Tocar":
 
         st.markdown(f"**Transposição atual:** {current_trans:+d} semitons")
         
-        # Exibição da Cifra com fonte monoespaçada para alinhar os acordes
         transposed_content = transpose_content_text(content, current_trans)
         
         st.markdown("---")
-        st.markdown(f"<pre style='font-family: monospace; background-color: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px;'>{transposed_content}</pre>", unsafe_allow_html=True)
+        st.code(transposed_content, language="text")
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------
 elif menu == "Adicionar / Importar Cifra":
@@ -246,7 +229,6 @@ elif menu == "Adicionar / Importar Cifra":
             else:
                 st.warning("Insira um link válido.")
                 
-        # Campos editáveis após o fetch ou preenchimento manual
         st.markdown("---")
         song_title = st.text_input("Nome da Música", value=st.session_state.get("temp_title", ""))
         song_artist = st.text_input("Artista / Banda", value=st.session_state.get("temp_artist", ""))
@@ -268,7 +250,6 @@ elif menu == "Adicionar / Importar Cifra":
                 st.warning("Preencha pelo menos o título e a cifra.")
 
     else:
-        # Modo estritamente manual
         m_title = st.text_input("Nome da Música")
         m_artist = st.text_input("Artista / Banda")
         m_tone = st.text_input("Tom Original (ex: C, Am, G)", value="C")
@@ -314,7 +295,6 @@ elif menu == "Gerenciar Pastas":
             if col2.button("Apagar Pasta", key=f"del_folder_{f_id}"):
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                # Atualiza as músicas dessa pasta para sem pasta (NULL)
                 cursor.execute("UPDATE songs SET folder_id = NULL WHERE folder_id = ?", (f_id,))
                 cursor.execute("DELETE FROM folders WHERE id = ?", (f_id,))
                 conn.commit()

@@ -101,7 +101,7 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- SCRAPER DO CIFRA CLUB ATUALIZADO ---
+# --- SCRAPER DO CIFRA CLUB CORRIGIDO ---
 def fetch_cifraclub(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -128,20 +128,21 @@ def fetch_cifraclub(url):
                 if not title or "html" in title.lower():
                     title = parts[-1].replace('-', ' ').title()
                     
-        # Busca correta do tom original atualizada para o layout novo do Cifra Club
-        tone_tag = soup.find(class_=re.sub(r'\s+', '', 'Cifra_tone__')) or soup.find('a', class_='js-cifra-tone')
-        if not tone_tag:
-            # Procura pelo texto do tom logo após a tag "Tom:"
-            tone_label = soup.find(text=re.compile(r'Tom:', re.I))
-            if tone_label and tone_label.find_next():
-                original_tone = tone_label.find_next().text.strip()
-            else:
-                original_tone = "C"
+        # Extração precisa e segura do tom original
+        original_tone = "C"
+        tone_element = soup.find(class_=re.compile(r'Cifra_tone|js-cifra-tone', re.I))
+        if tone_element:
+            original_tone = tone_element.text.strip()
         else:
-            original_tone = tone_tag.text.strip()
-            
-        # Garante que pegou só a nota limpa (ex: "Tom: G" vira "G")
-        original_tone = re.sub(r'[^A-G][b#]?', '', original_tone) or "C"
+            for span in soup.find_all(['span', 'a', 'div']):
+                text = span.get_text().strip()
+                if text in ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B', 
+                            'Cm', 'C#m', 'Dbm', 'Dm', 'D#m', 'Ebm', 'Em', 'Fm', 'F#m', 'Gbm', 'Gm', 'G#m', 'Abm', 'Am', 'A#m', 'Bbm', 'Bm']:
+                    original_tone = text
+                    break
+                    
+        if len(original_tone) > 5:
+            original_tone = "C"
             
         pre_tag = soup.find('pre')
         if pre_tag:
@@ -229,7 +230,7 @@ if menu == "Visualizar / Tocar":
             
         current_trans = st.session_state.get(f"trans_{s_id}", 0)
         
-        # Correção para o botão "Original" voltar perfeitamente ao tom original
+        # Garante o retorno ao tom original perfeitamente
         if chosen_tone == "Original":
             current_trans = 0
             st.session_state[f"trans_{s_id}"] = 0

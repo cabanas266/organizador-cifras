@@ -11,19 +11,19 @@ st.markdown("""
     <style>
     /* Fundo geral da aplicação e do container principal */
     .stApp {
-        background-color: #0e1117;
+        background-color: #000000;
         color: #ffffff;
     }
     
-    /* Textos gerais, títulos e labels */
+    /* Textos gerais, títulos e labels em branco */
     h1, h2, h3, h4, h5, h6, p, label, .stMarkdown, span {
         color: #ffffff !important;
     }
     
-    /* Caixa de exibição da cifra (<pre>) com fundo escuro e letras bem legíveis */
+    /* Caixa de exibição da cifra (<pre>) com fundo escuro e letras em branco nítido */
     pre {
-        background-color: #1a1c23 !important;
-        color: #00ffcc !important; /* Destaque levemente esverdeado/ciano para os acordes/texto facilitando a leitura */
+        background-color: #121212 !important;
+        color: #ffffff !important; 
         border: 1px solid #333333;
         border-radius: 5px;
         padding: 15px;
@@ -32,7 +32,7 @@ st.markdown("""
     
     /* Barra lateral */
     section[data-testid="stSidebar"] {
-        background-color: #161a23;
+        background-color: #0b0b0b;
     }
     section[data-testid="stSidebar"] * {
         color: #ffffff !important;
@@ -40,8 +40,9 @@ st.markdown("""
     
     /* Ajuste de inputs e selectboxes */
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
-        background-color: #262730 !important;
+        background-color: #1a1a1a !important;
         color: #ffffff !important;
+        border: 1px solid #444444 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -168,7 +169,6 @@ def fetch_cifraclub(url):
                 if not title or "html" in title.lower():
                     title = parts[-1].replace('-', ' ').title()
                     
-        # Extração precisa e segura do tom original
         original_tone = "C"
         tone_element = soup.find(class_=re.compile(r'Cifra_tone|js-cifra-tone', re.I))
         if tone_element:
@@ -270,7 +270,6 @@ if menu == "Visualizar / Tocar":
             
         current_trans = st.session_state.get(f"trans_{s_id}", 0)
         
-        # Garante o retorno ao tom original perfeitamente
         if chosen_tone == "Original":
             current_trans = 0
             st.session_state[f"trans_{s_id}"] = 0

@@ -11,7 +11,6 @@ def init_db():
     conn = sqlite3.connect("cifras_control.db")
     cursor = conn.cursor()
     
-    # Tabela de Pastas / Repertórios
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS folders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +18,6 @@ def init_db():
         )
     """)
     
-    # Tabela de Músicas
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS songs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +74,6 @@ def transpose_content_text(content, semitones):
     
     for line in lines:
         words = line.split()
-        new_words = []
         is_chord_line = False
         
         if words:
@@ -103,22 +100,32 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- SCRAPER DO CIFRA CLUB ---
+# --- SCRAPER DO CIFRA CLUB ATUALIZADO ---
 def fetch_cifraclub(url):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code != 200:
             return None, None, None, "Erro ao acessar o link."
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        title_tag = soup.find('h1', class_='cnt-head-title')
-        artist_tag = soup.find('h2', class_='cnt-head-sub-title')
+        # Seletores atualizados para o layout atual do Cifra Club
+        title_tag = soup.find('h1', class_='t1') or soup.find('h1', class_='cnt-head-title')
+        artist_tag = soup.find('h2', class_='t3') or soup.find('h2', class_='cnt-head-sub-title')
         
-        title = title_tag.text.strip() if title_tag else "Desconhecido"
-        artist = artist_tag.text.strip() if artist_tag else "Desconhecido"
+        title = title_tag.text.strip() if title_tag else ""
+        artist = artist_tag.text.strip() if artist_tag else ""
         
+        # Fallback extraindo da URL caso as tags mudem
+        if not title or not artist:
+            parts = [p for p in url.strip('/').split('/') if p]
+            if len(parts) >= 2:
+                if not artist:
+                    artist = parts[-2].replace('-', ' ').title()
+                if not title:
+                    title = parts[-1].replace('-', ' ').title()
+                    
         tone_tag = soup.find('a', class_='js-cifra-tone')
         original_tone = tone_tag.text.strip() if tone_tag else "C"
         
@@ -128,7 +135,7 @@ def fetch_cifraclub(url):
         else:
             return None, None, None, "Não foi possível encontrar a estrutura da cifra nesta página."
             
-        return title, artist, original_tone, content
+        return title or "Desconhecido", artist or "Desconhecido", original_tone, content
     except Exception as e:
         return None, None, None, f"Erro na importação: {str(e)}"
 
@@ -218,14 +225,18 @@ elif menu == "Adicionar / Importar Cifra":
             if url_input.strip():
                 with st.spinner("Buscando dados no Cifra Club..."):
                     t, a, ot, c = fetch_cifraclub(url_input)
-                    if t:
+                    if t and t != "Desconhecido":
                         st.session_state["temp_title"] = t
                         st.session_state["temp_artist"] = a
                         st.session_state["temp_tone"] = ot
                         st.session_state["temp_content"] = c
                         st.success(f"Sucesso! Música encontrada: {t} - {a}")
                     else:
-                        st.error(c)
+                        st.session_state["temp_title"] = t
+                        st.session_state["temp_artist"] = a
+                        st.session_state["temp_tone"] = ot
+                        st.session_state["temp_content"] = c
+                        st.warning("Aviso: Título ou artista extraídos com ressalvas, verifique os campos abaixo.")
             else:
                 st.warning("Insira um link válido.")
                 

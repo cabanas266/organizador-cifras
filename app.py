@@ -215,7 +215,7 @@ conn.close()
 # --- TÍTULO PRINCIPAL DO APP ---
 st.title("🎸 Cifras & Repertório")
 
-# --- MENU EM ABAS NO TOPO (Perfeito para Celular e PC) ---
+# --- MENU EM ABAS NO TOPO (Com controle de aba ativa) ---
 tab_names = ["🎵 Palco / Tocar", "📥 Adicionar Cifra", "📂 Pastas", "📚 Lista Geral"]
 tabs = st.tabs(tab_names)
 

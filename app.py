@@ -74,7 +74,6 @@ def transpose_content_text(content, semitones):
     
     for line in lines:
         words = line.split()
-        new_words = []
         is_chord_line = False
         
         if words:
@@ -101,13 +100,12 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- FUNÇÃO PARA COLORIR OS ACORDES EM HTML ---
+# --- FUNÇÃO CORRIGIDA PARA COLORIR APENAS AS LINHAS DE ACORDES ---
 def format_chord_html(content):
     lines = content.split('\n')
     formatted_lines = []
     
     for line in lines:
-        # Escapa caracteres especiais do HTML para segurança
         safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         words = safe_line.split()
         is_chord_line = False
@@ -118,28 +116,30 @@ def format_chord_html(content):
                 clean_w = re.sub(r'[^A-G0-9b#/#m()+-]', '', w)
                 if re.match(r'^[A-G][b#]?[m°0-9sus4addmaj7/-]*$', clean_w):
                     chord_count += 1
+            # Linha considerada de acordes se tiver boa densidade de acordes ou for bem curta (ex: [Intro])
             if chord_count >= len(words) * 0.4 or len(words) <= 3:
                 is_chord_line = True
                 
+        # Se for uma linha de acordes, pinta cada acorde de laranja
         if is_chord_line:
-            # Substitui cada acorde individualmente por uma tag span colorida (Laranja vibrante)
             new_line = safe_line
             for word in words:
                 m = re.match(r'^([^\w]*)([A-G][b#]?[m°0-9sus4addmaj8/-]*)([^\w]*)$', word)
+                # Garante que a palavra é realmente um formato de acorde válido e não uma palavra comum
                 if m and len(m.group(2)) > 0:
                     prefix, chord, suffix = m.groups()
-                    # Cor dos acordes: Laranja forte (#FF8C00 ou #FF5722). Se preferir vermelho, troque por #FF3B30
-                    colored_chord = f'<span style="color: #FF7043; font-weight: bold;">{chord}</span>'
-                    replacement = f"{prefix}{colored_chord}{suffix}"
-                    new_line = new_line.replace(word, replacement, 1)
+                    # Verifica se o miolo é estritamente um acorde padrão para evitar falsos positivos
+                    if re.match(r'^[A-G][b#]?[m°0-9sus4addmaj8/-]*$', chord):
+                        colored_chord = f'<span style="color: #FF7043; font-weight: bold;">{chord}</span>'
+                        replacement = f"{prefix}{colored_chord}{suffix}"
+                        new_line = new_line.replace(word, replacement, 1)
             formatted_lines.append(new_line)
         else:
-            # Linhas de letra normal ficam com cor clara legível no fundo escuro
+            # Linhas de letra ou marcações comuns ficam com a cor clara padrão
             formatted_lines.append(f'<span style="color: #E0E0E0;">{safe_line}</span>')
             
     joined_html = "<br>".join(formatted_lines)
     
-    # Caixa estilo "Modo Palco" com fundo escuro e fonte mono espaçada
     html_output = f"""
     <div style="background-color: #121212; padding: 20px; border-radius: 10px; font-family: monospace; font-size: 15px; line-height: 1.5; overflow-x: auto; white-space: pre;">
         {joined_html}
@@ -278,7 +278,6 @@ if menu == "Visualizar / Tocar":
         transposed_content = transpose_content_text(content, current_trans)
         
         st.markdown("---")
-        # Renderiza a cifra com acordes coloridos e fundo escuro profissional
         st.markdown(format_chord_html(transposed_content), unsafe_allow_html=True)
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------

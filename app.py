@@ -101,7 +101,7 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- SCRAPER DO CIFRA CLUB ---
+# --- SCRAPER DO CIFRA CLUB ATUALIZADO ---
 def fetch_cifraclub(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -128,9 +128,21 @@ def fetch_cifraclub(url):
                 if not title or "html" in title.lower():
                     title = parts[-1].replace('-', ' ').title()
                     
-        tone_tag = soup.find('a', class_='js-cifra-tone')
-        original_tone = tone_tag.text.strip() if tone_tag else "C"
-        
+        # Busca correta do tom original atualizada para o layout novo do Cifra Club
+        tone_tag = soup.find(class_=re.sub(r'\s+', '', 'Cifra_tone__')) or soup.find('a', class_='js-cifra-tone')
+        if not tone_tag:
+            # Procura pelo texto do tom logo após a tag "Tom:"
+            tone_label = soup.find(text=re.compile(r'Tom:', re.I))
+            if tone_label and tone_label.find_next():
+                original_tone = tone_label.find_next().text.strip()
+            else:
+                original_tone = "C"
+        else:
+            original_tone = tone_tag.text.strip()
+            
+        # Garante que pegou só a nota limpa (ex: "Tom: G" vira "G")
+        original_tone = re.sub(r'[^A-G][b#]?', '', original_tone) or "C"
+            
         pre_tag = soup.find('pre')
         if pre_tag:
             content = pre_tag.get_text()
@@ -217,7 +229,11 @@ if menu == "Visualizar / Tocar":
             
         current_trans = st.session_state.get(f"trans_{s_id}", 0)
         
-        if chosen_tone != "Original" and orig_tone:
+        # Correção para o botão "Original" voltar perfeitamente ao tom original
+        if chosen_tone == "Original":
+            current_trans = 0
+            st.session_state[f"trans_{s_id}"] = 0
+        elif orig_tone:
             norm_orig = normalize_note(orig_tone)
             norm_chosen = normalize_note(chosen_tone)
             if norm_orig in NOTES_SHARP and norm_chosen in NOTES_SHARP:
@@ -232,7 +248,6 @@ if menu == "Visualizar / Tocar":
         transposed_content = transpose_content_text(content, current_trans)
         
         st.markdown("---")
-        # Exibe a cifra perfeitamente alinhada sem erros de HTML
         st.code(transposed_content, language="text")
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------
@@ -251,18 +266,11 @@ elif menu == "Adicionar / Importar Cifra":
             if url_input.strip():
                 with st.spinner("Buscando dados no Cifra Club..."):
                     t, a, ot, c = fetch_cifraclub(url_input)
-                    if t and t != "Desconhecido":
-                        st.session_state["temp_title"] = t
-                        st.session_state["temp_artist"] = a
-                        st.session_state["temp_tone"] = ot
-                        st.session_state["temp_content"] = c
-                        st.success(f"Sucesso! Música encontrada: {t} - {a}")
-                    else:
-                        st.session_state["temp_title"] = t
-                        st.session_state["temp_artist"] = a
-                        st.session_state["temp_tone"] = ot
-                        st.session_state["temp_content"] = c
-                        st.warning("Aviso: Título ou artista extraídos com ressalvas, verifique os campos abaixo.")
+                    st.session_state["temp_title"] = t
+                    st.session_state["temp_artist"] = a
+                    st.session_state["temp_tone"] = ot
+                    st.session_state["temp_content"] = c
+                    st.success(f"Sucesso! Música encontrada: {t} - {a} (Tom Original: {ot})")
             else:
                 st.warning("Insira um link válido.")
                 

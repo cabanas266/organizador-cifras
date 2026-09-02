@@ -3,6 +3,7 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import re
+import html
 
 st.set_page_config(page_title="Organizador de Cifras & Repertório", page_icon="🎸", layout="centered")
 
@@ -74,7 +75,6 @@ def transpose_content_text(content, semitones):
     
     for line in lines:
         words = line.split()
-        new_words = []
         is_chord_line = False
         
         if words:
@@ -101,7 +101,49 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- SCRAPER DO CIFRA CLUB CORRIGIDO ---
+# --- FUNÇÃO PARA COLORIR E DESTACAR ACORDES NO HTML (BLINDADA) ---
+def format_chords_html(content):
+    escaped_content = html.escape(content)
+    lines = escaped_content.split('\n')
+    formatted_lines = []
+    
+    for line in lines:
+        words = line.split()
+        is_chord_line = False
+        
+        if words:
+            chord_count = 0
+            for w in words:
+                clean_w = re.sub(r'[^A-G0-9b#/#m()+-]', '', w)
+                if re.match(r'^[A-G][b#]?[m°0-9sus4addmaj7/-]*$', clean_w):
+                    chord_count += 1
+            if chord_count >= len(words) * 0.4 or len(words) <= 3:
+                is_chord_line = True
+        
+        if is_chord_line:
+            new_line = line
+            for word in words:
+                m = re.match(r'^([^\w]*)([A-G][b#]?[m°0-9sus4addmaj8/-]*)([^\w]*)$', word)
+                if m:
+                    prefix, chord, suffix = m.groups()
+                    # Substitui os espaços por non-breaking spaces para garantir que o navegador não esmague o alinhamento
+                    styled_chord = f'<strong style="color: #00b4d8; font-weight: bold;">{chord}</strong>'
+                    replacement = f"{prefix}{styled_chord}{suffix}"
+                    new_line = new_line.replace(word, replacement, 1)
+            formatted_lines.append(new_line)
+        else:
+            formatted_lines.append(line)
+            
+    final_html = "\n".join(formatted_lines)
+    
+    # CSS com white-space: pre-wrap e font monoespaçada rigorosa
+    return f"""
+    <div style="background-color: rgba(128, 128, 128, 0.08); padding: 15px; border-radius: 8px; overflow-x: auto;">
+        <pre style="font-family: 'Courier New', Courier, monospace; font-size: 14px; line-height: 1.5; margin: 0; white-space: pre-wrap; word-break: normal; color: inherit;">{final_html}</pre>
+    </div>
+    """
+
+# --- SCRAPER DO CIFRA CLUB ---
 def fetch_cifraclub(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -128,7 +170,6 @@ def fetch_cifraclub(url):
                 if not title or "html" in title.lower():
                     title = parts[-1].replace('-', ' ').title()
                     
-        # Extração precisa e segura do tom original
         original_tone = "C"
         tone_element = soup.find(class_=re.compile(r'Cifra_tone|js-cifra-tone', re.I))
         if tone_element:
@@ -230,7 +271,6 @@ if menu == "Visualizar / Tocar":
             
         current_trans = st.session_state.get(f"trans_{s_id}", 0)
         
-        # Garante o retorno ao tom original perfeitamente
         if chosen_tone == "Original":
             current_trans = 0
             st.session_state[f"trans_{s_id}"] = 0
@@ -249,7 +289,7 @@ if menu == "Visualizar / Tocar":
         transposed_content = transpose_content_text(content, current_trans)
         
         st.markdown("---")
-        st.code(transposed_content, language="text")
+        st.markdown(format_chords_html(transposed_content), unsafe_allow_html=True)
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------
 elif menu == "Adicionar / Importar Cifra":

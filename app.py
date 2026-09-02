@@ -6,7 +6,7 @@ import re
 
 st.set_page_config(page_title="Organizador de Cifras & Repertório", page_icon="🎸", layout="centered")
 
-# --- ESTILO VISUAL (FUNDO PRETO E ELEMENTOS VISÍVEIS) ---
+# --- ESTILO VISUAL (COMPACTO E LADO A LADO NO CELULAR) ---
 st.markdown("""
     <style>
     /* Fundo geral da aplicação */
@@ -30,12 +30,15 @@ st.markdown("""
         font-size: 16px;
     }
     
-    /* Ajuste para os botões */
+    /* Ajuste para os botões ficarem compactos */
     .stButton button {
         background-color: #1f1f1f !important;
         color: #ffffff !important;
         border: 1px solid #444444 !important;
         border-radius: 4px;
+        padding: 2px 8px !important;
+        font-size: 13px !important;
+        min-height: 32px !important;
     }
     .stButton button:hover {
         background-color: #333333 !important;
@@ -47,6 +50,20 @@ st.markdown("""
         background-color: #1a1a1a !important;
         color: #ffffff !important;
         border: 1px solid #444444 !important;
+    }
+
+    /* FORÇAR COLUNAS A FICAREM LADO A LADO NO CELULAR */
+    @media (max-width: 768px) {
+        [data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+        }
+        [data-testid="column"] {
+            width: unset !important;
+            flex: 1 1 0 !important;
+            min-width: 0 !important;
+        }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -218,7 +235,6 @@ st.title("🎸 Cifras & Repertório")
 # --- MENU SUPERIOR DINÂMICO ---
 menu_options = ["🎵 Palco / Tocar", "📥 Adicionar Cifra", "📂 Pastas", "📚 Lista Geral"]
 
-# Se houver uma música selecionada para tocar, força a seleção do menu para o Palco
 if st.session_state.get('redirect_to_play', False):
     st.session_state['menu_opcao'] = "🎵 Palco / Tocar"
     st.session_state['redirect_to_play'] = False
@@ -390,13 +406,14 @@ elif escolha == "📂 Pastas":
                 
                 if folder_songs:
                     for s_id, title, artist, tone in folder_songs:
-                        col_txt, col_play, col_del = st.columns([3, 1, 1])
-                        col_txt.write(f"🎵 **{title}** - *{artist}* (Tom: {tone or 'C'})")
-                        if col_play.button("Tocar", key=f"play_folder_song_{s_id}"):
+                        # Layout super compacto lado a lado
+                        col_txt, col_play, col_del = st.columns([4, 1.2, 1.2])
+                        col_txt.markdown(f"<p style='font-size:14px; margin:0; line-height:32px;'>🎵 <b>{title}</b> - {artist}</p>", unsafe_allow_html=True)
+                        if col_play.button("▶ Tocar", key=f"play_folder_song_{s_id}"):
                             st.session_state['selected_song_to_play'] = s_id
                             st.session_state['redirect_to_play'] = True
                             st.rerun()
-                        if col_del.button("Excluir", key=f"del_folder_song_{s_id}"):
+                        if col_del.button("🗑 Excluir", key=f"del_folder_song_{s_id}"):
                             conn = get_db_connection()
                             cursor = conn.cursor()
                             cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))
@@ -441,15 +458,16 @@ elif escolha == "📚 Lista Geral":
                 if f_id == folder_id:
                     folder_label = f_name
             
-            col_info, col_play, col_del = st.columns([3, 1, 1])
-            col_info.write(f"🎵 **{title}** - *{artist}* (Tom: {tone or 'C'} | 📂 {folder_label})")
+            # Layout compacto lado a lado na lista geral também
+            col_info, col_play, col_del = st.columns([4, 1.2, 1.2])
+            col_info.markdown(f"<p style='font-size:14px; margin:0; line-height:32px;'>🎵 <b>{title}</b> - {artist}</p>", unsafe_allow_html=True)
             
-            if col_play.button("Tocar", key=f"play_song_{s_id}"):
+            if col_play.button("▶ Tocar", key=f"play_song_{s_id}"):
                 st.session_state['selected_song_to_play'] = s_id
                 st.session_state['redirect_to_play'] = True
                 st.rerun()
                 
-            if col_del.button("Excluir", key=f"del_song_{s_id}"):
+            if col_del.button("🗑 Excluir", key=f"del_song_{s_id}"):
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))

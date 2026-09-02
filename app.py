@@ -74,6 +74,7 @@ def transpose_content_text(content, semitones):
     
     for line in lines:
         words = line.split()
+        new_words = []
         is_chord_line = False
         
         if words:
@@ -100,7 +101,7 @@ def transpose_content_text(content, semitones):
             
     return '\n'.join(new_lines)
 
-# --- SCRAPER DO CIFRA CLUB ATUALIZADO ---
+# --- SCRAPER DO CIFRA CLUB (COM SUPORTE A VERSÕES) ---
 def fetch_cifraclub(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -110,20 +111,24 @@ def fetch_cifraclub(url):
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Seletores atualizados para o layout atual do Cifra Club
+        # Tenta pegar pelas tags HTML oficiais da página
         title_tag = soup.find('h1', class_='t1') or soup.find('h1', class_='cnt-head-title')
         artist_tag = soup.find('h2', class_='t3') or soup.find('h2', class_='cnt-head-sub-title')
         
         title = title_tag.text.strip() if title_tag else ""
         artist = artist_tag.text.strip() if artist_tag else ""
         
-        # Fallback extraindo da URL caso as tags mudem
-        if not title or not artist:
+        # Fallback inteligente extraindo e limpando da URL caso as tags mude ou seja versão
+        if not title or not artist or "html" in title.lower():
             parts = [p for p in url.strip('/').split('/') if p]
+            # Remove sufixos comuns de versões como 'simplificada.html', 'index.html', etc.
+            if parts and (parts[-1].endswith('.html') or parts[-1] in ['simplificada', 'baixo', 'teclado', 'ukulele']):
+                parts.pop()
+                
             if len(parts) >= 2:
                 if not artist:
                     artist = parts[-2].replace('-', ' ').title()
-                if not title:
+                if not title or "html" in title.lower():
                     title = parts[-1].replace('-', ' ').title()
                     
         tone_tag = soup.find('a', class_='js-cifra-tone')

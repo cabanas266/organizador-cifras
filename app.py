@@ -6,36 +6,48 @@ import re
 
 st.set_page_config(page_title="Organizador de Cifras & Repertório", page_icon="🎸", layout="centered")
 
-# --- ESTILO VISUAL: FUNDO PRETO E ESCRITA EM BRANCO ---
+# --- ESTILO VISUAL CORRIGIDO (FUNDO PRETO, ELEMENTOS VISÍVEIS) ---
 st.markdown("""
     <style>
-    /* Fundo geral da aplicação e do container principal */
+    /* Fundo geral da aplicação */
     .stApp {
-        background-color: #000000;
+        background-color: #0b0b0b;
         color: #ffffff;
     }
     
-    /* Textos gerais, títulos e labels em branco */
+    /* Títulos e textos gerais em branco */
     h1, h2, h3, h4, h5, h6, p, label, .stMarkdown, span {
         color: #ffffff !important;
     }
     
-    /* Caixa de exibição da cifra (<pre>) com fundo escuro e letras em branco nítido */
+    /* Caixa de exibição da cifra (<pre>) com fundo escuro e letras em branco */
     pre {
-        background-color: #121212 !important;
+        background-color: #141414 !important;
         color: #ffffff !important; 
         border: 1px solid #333333;
-        border-radius: 5px;
+        border-radius: 6px;
         padding: 15px;
         font-size: 16px;
     }
     
     /* Barra lateral */
     section[data-testid="stSidebar"] {
-        background-color: #0b0b0b;
+        background-color: #050505;
     }
     section[data-testid="stSidebar"] * {
         color: #ffffff !important;
+    }
+    
+    /* Ajuste para os botões (para não ficarem brancos sumindo com o texto) */
+    .stButton button {
+        background-color: #1f1f1f !important;
+        color: #ffffff !important;
+        border: 1px solid #444444 !important;
+        border-radius: 4px;
+    }
+    .stButton button:hover {
+        background-color: #333333 !important;
+        border-color: #ffffff !important;
     }
     
     /* Ajuste de inputs e selectboxes */

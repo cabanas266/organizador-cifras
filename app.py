@@ -74,6 +74,7 @@ def transpose_content_text(content, semitones):
     
     for line in lines:
         words = line.split()
+        new_words = []
         is_chord_line = False
         
         if words:
@@ -99,6 +100,52 @@ def transpose_content_text(content, semitones):
             new_lines.append(line)
             
     return '\n'.join(new_lines)
+
+# --- FUNÇÃO PARA COLORIR OS ACORDES EM HTML ---
+def format_chord_html(content):
+    lines = content.split('\n')
+    formatted_lines = []
+    
+    for line in lines:
+        # Escapa caracteres especiais do HTML para segurança
+        safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        words = safe_line.split()
+        is_chord_line = False
+        
+        if words:
+            chord_count = 0
+            for w in words:
+                clean_w = re.sub(r'[^A-G0-9b#/#m()+-]', '', w)
+                if re.match(r'^[A-G][b#]?[m°0-9sus4addmaj7/-]*$', clean_w):
+                    chord_count += 1
+            if chord_count >= len(words) * 0.4 or len(words) <= 3:
+                is_chord_line = True
+                
+        if is_chord_line:
+            # Substitui cada acorde individualmente por uma tag span colorida (Laranja vibrante)
+            new_line = safe_line
+            for word in words:
+                m = re.match(r'^([^\w]*)([A-G][b#]?[m°0-9sus4addmaj8/-]*)([^\w]*)$', word)
+                if m and len(m.group(2)) > 0:
+                    prefix, chord, suffix = m.groups()
+                    # Cor dos acordes: Laranja forte (#FF8C00 ou #FF5722). Se preferir vermelho, troque por #FF3B30
+                    colored_chord = f'<span style="color: #FF7043; font-weight: bold;">{chord}</span>'
+                    replacement = f"{prefix}{colored_chord}{suffix}"
+                    new_line = new_line.replace(word, replacement, 1)
+            formatted_lines.append(new_line)
+        else:
+            # Linhas de letra normal ficam com cor clara legível no fundo escuro
+            formatted_lines.append(f'<span style="color: #E0E0E0;">{safe_line}</span>')
+            
+    joined_html = "<br>".join(formatted_lines)
+    
+    # Caixa estilo "Modo Palco" com fundo escuro e fonte mono espaçada
+    html_output = f"""
+    <div style="background-color: #121212; padding: 20px; border-radius: 10px; font-family: monospace; font-size: 15px; line-height: 1.5; overflow-x: auto; white-space: pre;">
+        {joined_html}
+    </div>
+    """
+    return html_output
 
 # --- SCRAPER DO CIFRA CLUB ---
 def fetch_cifraclub(url):
@@ -151,7 +198,6 @@ if 'selected_song_to_play' not in st.session_state:
 st.sidebar.title("🎸 Cifras & Repertório")
 menu_options = ["Visualizar / Tocar", "Adicionar / Importar Cifra", "Gerenciar Pastas", "Lista Geral"]
 
-# Sincroniza o rádio com o estado da sessão se alterado via botões internos
 current_index = menu_options.index(st.session_state['nav_menu']) if st.session_state['nav_menu'] in menu_options else 0
 chosen_menu = st.sidebar.radio("Navegação", menu_options, index=current_index)
 
@@ -184,14 +230,12 @@ if menu == "Visualizar / Tocar":
         song_dict = {f"{s[1]} - {s[2]} (ID: {s[0]})": s for s in songs}
         song_names = list(song_dict.keys())
         
-        # Tenta selecionar automaticamente se veio de um clique externo
         default_idx = 0
         if st.session_state['selected_song_to_play']:
             for idx, name in enumerate(song_names):
                 if f"ID: {st.session_state['selected_song_to_play']})" in name:
                     default_idx = idx
                     break
-            # Limpa para não travar a seleção manual depois
             st.session_state['selected_song_to_play'] = None
             
         selected_song_name = st.selectbox("Escolher Música", song_names, index=default_idx)
@@ -234,7 +278,8 @@ if menu == "Visualizar / Tocar":
         transposed_content = transpose_content_text(content, current_trans)
         
         st.markdown("---")
-        st.code(transposed_content, language="text")
+        # Renderiza a cifra com acordes coloridos e fundo escuro profissional
+        st.markdown(format_chord_html(transposed_content), unsafe_allow_html=True)
 
 # ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------
 elif menu == "Adicionar / Importar Cifra":

@@ -1,10 +1,12 @@
 import streamlit as st
+import requests
+from bs4 import BeautifulSoup
 from supabase import create_client, Client
 
 # Configuração da página para celular e desktop
 st.set_page_config(page_title="Gerenciador de Cifras", page_icon="🎸", layout="centered")
 
-# Credenciais do Supabase fornecidas
+# Credenciais do Supabase
 SUPABASE_URL = "https://vnnbpjsdofrebeeycmuh.supabase.co"
 SUPABASE_KEY = "sb_publishable_lSKB7eqGkItfN2s9N7PUCQ_qT9KsoEl"
 
@@ -38,7 +40,7 @@ if st.session_state.user is None:
                 st.success("Login realizado com sucesso!")
                 st.rerun()
             except Exception as e:
-                st.error(f"Erro ao entrar: Verifique seu e-mail e senha.")
+                st.error("Erro ao entrar: Verifique seu e-mail e senha.")
                 
     with aba_cadastro:
         email_cad = st.text_input("E-mail para cadastro", key="email_cad")
@@ -47,7 +49,7 @@ if st.session_state.user is None:
         if st.button("Cadastrar Nova Conta"):
             try:
                 res = supabase.auth.sign_up({"email": email_cad, "password": senha_cad})
-                st.success("Conta criada com sucesso! Verifique seu e-mail se necessário ou faça login na aba ao lado.")
+                st.success("Conta criada com sucesso! Faça login na aba ao lado.")
             except Exception as e:
                 st.error(f"Erro ao cadastrar: {e}")
 
@@ -69,10 +71,7 @@ else:
 
     st.title("🎸 Meu Repertório de Cifras")
 
-    # Navegação por Abas Superiores (Otimizado para Mobile)
-    menu = st.radio("Navegação", ["Repertório", "Adicionar / Editar", "Pastas / Repertórios"], horizontal=True)
-
-    # Função auxiliar para buscar músicas do usuário logado
+    # Função para buscar músicas do usuário logado no Supabase
     def get_songs():
         try:
             response = supabase.table("songs").select("*").eq("user_id", user.id).execute()
@@ -83,13 +82,15 @@ else:
 
     songs = get_songs()
 
+    # Navegação por Abas Superiores (Incluindo o Importador do Cifra Club)
+    menu = st.radio("Navegação", ["Repertório", "Adicionar / Importar", "Pastas / Repertórios"], horizontal=True)
+
     if menu == "Repertório":
         st.subheader("🎵 Músicas Cadastradas")
         
         if not songs:
-            st.info("Nenhuma cifra cadastrada ainda. Vá na aba 'Adicionar / Editar' para começar!")
+            st.info("Nenhuma cifra cadastrada ainda. Vá na aba 'Adicionar / Importar' para começar!")
         else:
-            # Filtro por pasta/repertório
             pastas_disponiveis = ["Todas"] + list(set([s.get("folder", "Geral") for s in songs if s.get("folder")]))
             filtro_pasta = st.selectbox("Filtrar por Pasta:", pastas_disponiveis)
             
@@ -99,9 +100,9 @@ else:
                 with st.expander(f"{song['title']} — *{song.get('artist', 'Desconhecido')}* ({song.get('folder', 'Geral')})"):
                     st.text(song.get("content", ""))
                     
-                    col_del, col_edit = st.columns([1, 1])
+                    col_del, _ = st.columns([1, 1])
                     with col_del:
-                        if st.button("Excluir", key=f"del_{song['id']}"):
+                        if st.button("Excluir", key=f"del_{song['id']}_cifra"):
                             try:
                                 supabase.table("songs").delete().eq("id", song["id"]).eq("user_id", user.id).execute()
                                 st.success("Música excluída!")
@@ -109,27 +110,75 @@ else:
                             except Exception as e:
                                 st.error(f"Erro ao excluir: {e}")
 
-    elif menu == "Adicionar / Editar":
-        st.subheader("➕ Adicionar Nova Cifra")
+    elif menu == "Adicionar / Importar":
+        st.subheader("🌐 Importar do Cifra Club ou Adicionar Manual")
         
-        with st.form("form_add_song"):
-            titulo = st.text_input("Título da Música *")
-            artista = st.text_input("Artista / Banda")
-            pasta = st.text_input("Pasta / Repertório (Ex: Show Acústico, Ensaio)", value="Geral")
-            conteudo = st.text_area("Cifra e Letra", height=250, placeholder="Cole a cifra aqui com os acordes alinhados...")
-            
-            salvar = st.form_submit_button("Salvar Cifra na Nuvem")
-            
-            if salvar:
-                if not titulo:
-                    st.warning("O título da música é obrigatório!")
-                else:
-                    try:
+        # Seção de Importação do Cifra Club
+        st.markdown("### Importação Automática")
+        url_cifra = st.text_input("Cole o link da cifra do Cifra Club:")
+        
+        pasta_import = st.text_input("Pasta / Repertório para a importação", value="Geral", key="pasta_imp")
+        
+        if st.button("Importar Cifra"):
+            if not url_cifra:
+                st.warning("Por favor, insira um link válido.")
+            else:
+                try:
+                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                    resposta = requests.get(url_cifra, headers=headers)
+                    
+                    if resposta.status_code == 200:
+                        soup = BeautifulSoup(resposta.text, "html.parser")
+                        
+                        # Extrai título e artista usando as tags padrões do Cifra Club
+                        titulo_tag = soup.find("h1")
+                        artista_tag = soup.find("h2")
+                        cifra_tag = soup.find("pre")
+                        
+                        titulo = titulo_tag.text.strip() if titulo_tag else "Sem Título"
+                        artista = artista_tag.text.strip() if artista_tag else "Desconhecido"
+                        
+                        if cifra_tag:
+                            conteudo = cifra_tag.text
+                        else:
+                            conteudo = "Não foi possível extrair o texto da cifra automaticamente. Cole manualmente abaixo se preferir."
+                        
+                        # Salva direto no Supabase vinculado ao usuário atual
                         novo_dado = {
                             "title": titulo,
                             "artist": artista,
-                            "folder": pasta,
+                            "folder": pasta_import,
                             "content": conteudo,
+                            "user_id": user.id
+                        }
+                        supabase.table("songs").insert(novo_dado).execute()
+                        st.success(f"Cifra '{titulo}' de '{artista}' importada e salva na nuvem com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("Não foi possível acessar a página informada. Verifique o link.")
+                except Exception as e:
+                    st.error(f"Erro ao importar: {e}")
+
+        st.markdown("---")
+        st.markdown("### Cadastro Manual")
+        with st.form("form_add_manual"):
+            titulo_m = st.text_input("Título da Música *")
+            artista_m = st.text_input("Artista / Banda")
+            pasta_m = st.text_input("Pasta / Repertório", value="Geral", key="pasta_man")
+            conteudo_m = st.text_area("Cifra e Letra", height=200)
+            
+            salvar_m = st.form_submit_button("Salvar na Nuvem")
+            
+            if salvar_m:
+                if not titulo_m:
+                    st.warning("O título é obrigatório!")
+                else:
+                    try:
+                        novo_dado = {
+                            "title": titulo_m,
+                            "artist": artista_m,
+                            "folder": pasta_m,
+                            "content": conteudo_m,
                             "user_id": user.id
                         }
                         supabase.table("songs").insert(novo_dado).execute()

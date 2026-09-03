@@ -1,215 +1,484 @@
+import sqlite3
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-from supabase import create_client, Client
+import re
 
-# Configuração da página para celular e desktop
-st.set_page_config(page_title="Gerenciador de Cifras", page_icon="🎸", layout="centered")
+st.set_page_config(page_title="Organizador de Cifras & Repertório", page_icon="🎸", layout="centered")
 
-# Credenciais do Supabase
-SUPABASE_URL = "https://vnnbpjsdofrebeeycmuh.supabase.co"
-SUPABASE_KEY = "sb_publishable_lSKB7eqGkItfN2s9N7PUCQ_qT9KsoEl"
-
-@st.cache_resource
-def init_supabase() -> Client:
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
-
-supabase = init_supabase()
-
-# Controle de Sessão de Usuário no Streamlit
-if "user" not in st.session_state:
-    st.session_state.user = None
-
-# ---------------------------------------------------------
-# TELA DE LOGIN / CADASTRO
-# ---------------------------------------------------------
-if st.session_state.user is None:
-    st.title("🎸 Gerenciador de Cifras")
-    st.markdown("Faça login ou cadastre-se para acessar seu repertório seguro na nuvem.")
+# --- ESTILO VISUAL COMPACTO ---
+st.markdown("""
+    <style>
+    /* Fundo geral da aplicação */
+    .stApp {
+        background-color: #0b0b0b;
+        color: #ffffff;
+    }
     
-    aba_login, aba_cadastro = st.tabs(["Entrar", "Criar Conta"])
+    /* Títulos e textos gerais em branco */
+    h1, h2, h3, h4, h5, h6, p, label, .stMarkdown, span {
+        color: #ffffff !important;
+    }
     
-    with aba_login:
-        email_login = st.text_input("E-mail", key="email_login")
-        senha_login = st.text_input("Senha", type="password", key="senha_login")
-        
-        if st.button("Entrar", type="primary"):
-            try:
-                res = supabase.auth.sign_in_with_password({"email": email_login, "password": senha_login})
-                st.session_state.user = res.user
-                st.success("Login realizado com sucesso!")
-                st.rerun()
-            except Exception as e:
-                st.error("Erro ao entrar: Verifique seu e-mail e senha.")
-                
-    with aba_cadastro:
-        email_cad = st.text_input("E-mail para cadastro", key="email_cad")
-        senha_cad = st.text_input("Senha (mínimo 6 caracteres)", type="password", key="senha_cad")
-        
-        if st.button("Cadastrar Nova Conta"):
-            try:
-                res = supabase.auth.sign_up({"email": email_cad, "password": senha_cad})
-                st.success("Conta criada com sucesso! Faça login na aba ao lado.")
-            except Exception as e:
-                st.error(f"Erro ao cadastrar: {e}")
-
-else:
-    # ---------------------------------------------------------
-    # APLICATIVO PRINCIPAL (Usuário Logado)
-    # ---------------------------------------------------------
-    user = st.session_state.user
+    /* Caixa de exibição da cifra (<pre>) com fundo escuro e letras em branco */
+    pre {
+        background-color: #141414 !important;
+        color: #ffffff !important; 
+        border: 1px solid #333333;
+        border-radius: 6px;
+        padding: 15px;
+        font-size: 16px;
+    }
     
-    col_info, col_sair = st.columns([4, 1])
-    with col_info:
-        st.caption(f"Conectado como: {user.email}")
-    with col_sair:
-        if st.button("Sair"):
-            supabase.auth.sign_out()
-            st.session_state.user = None
-            st.rerun()
+    /* Ajuste para os botões ficarem bem compactos */
+    .stButton button {
+        background-color: #1f1f1f !important;
+        color: #ffffff !important;
+        border: 1px solid #444444 !important;
+        border-radius: 4px;
+        padding: 2px 6px !important;
+        font-size: 12px !important;
+        min-height: 28px !important;
+        width: 100% !important;
+    }
+    .stButton button:hover {
+        background-color: #333333 !important;
+        border-color: #ffffff !important;
+    }
+    
+    /* Ajuste de inputs e selectboxes */
+    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
+        background-color: #1a1a1a !important;
+        color: #ffffff !important;
+        border: 1px solid #444444 !important;
+    }
 
-    st.title("🎸 Meu Repertório de Cifras")
+    /* FORÇAR AS COLUNAS A FICAREM SEMPRE LADO A LADO NO CELULAR */
+    @media (max-width: 768px) {
+        div.row-widget.stHorizontal {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+        }
+        div.stColumn {
+            width: auto !important;
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-    # Função para buscar músicas do usuário logado no Supabase
-    def get_songs():
-        try:
-            response = supabase.table("songs").select("*").eq("user_id", user.id).order("title").execute()
-            return response.data
-        except Exception as e:
-            st.error(f"Erro ao carregar músicas: {e}")
-            return []
+# --- BANCO DE DADOS ---
+def init_db():
+    conn = sqlite3.connect("cifras_control.db")
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS songs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            artist TEXT NOT NULL,
+            original_tone TEXT,
+            current_tone TEXT,
+            content TEXT,
+            folder_id INTEGER,
+            FOREIGN KEY (folder_id) REFERENCES folders (id)
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-    songs = get_songs()
+init_db()
 
-    # Descobrir pastas existentes a partir das músicas cadastradas
-    pastas_existentes = sorted(list(set([s.get("folder", "Geral") for s in songs if s.get("folder")])))
-    if not pastas_existentes:
-        pastas_existentes = ["Geral"]
+def get_db_connection():
+    return sqlite3.connect("cifras_control.db")
 
-    # Navegação por Abas Superiores
-    menu = st.radio("Navegação", ["Repertório", "Adicionar / Importar", "Pastas / Repertórios"], horizontal=True)
+# --- ESCALA MUSICAL PARA TRANSPOSIÇÃO ---
+NOTES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+FLAT_TO_SHARP = {'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#'}
 
-    if menu == "Repertório":
-        st.subheader("🎵 Músicas Cadastradas")
+def normalize_note(note):
+    note = note.strip()
+    if note in FLAT_TO_SHARP:
+        return FLAT_TO_SHARP[note]
+    return note
+
+def transpose_chord(chord, semitones):
+    match = re.match(r'^([A-G][b#]?)', chord)
+    if not match:
+        return chord
+    
+    root = match.group(1)
+    norm_root = normalize_note(root)
+    
+    if norm_root not in NOTES_SHARP:
+        return chord
+    
+    idx = NOTES_SHARP.index(norm_root)
+    new_idx = (idx + semitones) % 12
+    new_root = NOTES_SHARP[new_idx]
+    
+    return chord.replace(root, new_root, 1)
+
+def transpose_content_text(content, semitones):
+    if semitones == 0:
+        return content
+    
+    lines = content.split('\n')
+    new_lines = []
+    
+    for line in lines:
+        words = line.split()
+        is_chord_line = False
         
-        if not songs:
-            st.info("Nenhuma cifra cadastrada ainda. Vá na aba 'Adicionar / Importar' para começar!")
+        if words:
+            chord_count = 0
+            for w in words:
+                clean_w = re.sub(r'[^A-G0-9b#/#m()+-]', '', w)
+                if re.match(r'^[A-G][b#]?[m°0-9sus4addmaj7/-]*$', clean_w):
+                    chord_count += 1
+            if chord_count >= len(words) * 0.4 or len(words) <= 3:
+                is_chord_line = True
+        
+        if is_chord_line:
+            new_line = line
+            for word in words:
+                m = re.match(r'^([^\w]*)([A-G][b#]?[m°0-9sus4addmaj8/-]*)([^\w]*)$', word)
+                if m:
+                    prefix, chord, suffix = m.groups()
+                    transposed = transpose_chord(chord, semitones)
+                    new_word = f"{prefix}{transposed}{suffix}"
+                    new_line = new_line.replace(word, new_word, 1)
+            new_lines.append(new_line)
         else:
-            # Filtro por pasta
-            opcoes_filtro = ["Todas"] + pastas_existentes
-            filtro_pasta = st.selectbox("Filtrar por Pasta:", opcoes_filtro)
+            new_lines.append(line)
             
-            musicas_filtradas = songs if filtro_pasta == "Todas" else [s for s in songs if s.get("folder") == filtro_pasta]
+    return '\n'.join(new_lines)
+
+# --- SCRAPER DO CIFRA CLUB ---
+def fetch_cifraclub(url):
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return None, None, None, "Erro ao acessar o link."
             
-            if not musicas_filtradas:
-                st.info(f"Nenhuma música encontrada na pasta '{filtro_pasta}'.")
-            
-            for song in musicas_filtradas:
-                with st.expander(f"{song['title']} — *{song.get('artist', 'Desconhecido')}* ({song.get('folder', 'Geral')})"):
-                    st.text(song.get("content", ""))
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        title_tag = soup.find('h1', class_='t1') or soup.find('h1', class_='cnt-head-title')
+        artist_tag = soup.find('h2', class_='t3') or soup.find('h2', class_='cnt-head-sub-title')
+        
+        title = title_tag.text.strip() if title_tag else ""
+        artist = artist_tag.text.strip() if artist_tag else ""
+        
+        if not title or not artist or "html" in title.lower():
+            parts = [p for p in url.strip('/').split('/') if p]
+            if parts and (parts[-1].endswith('.html') or parts[-1] in ['simplificada', 'baixo', 'teclado', 'ukulele']):
+                parts.pop()
+                
+            if len(parts) >= 2:
+                if not artist:
+                    artist = parts[-2].replace('-', ' ').title()
+                if not title or "html" in title.lower():
+                    title = parts[-1].replace('-', ' ').title()
                     
-                    col_del, _ = st.columns([1, 1])
-                    with col_del:
-                        if st.button("Excluir", key=f"del_{song['id']}"):
-                            try:
-                                supabase.table("songs").delete().eq("id", song["id"]).eq("user_id", user.id).execute()
+        original_tone = "C"
+        tone_element = soup.find(class_=re.compile(r'Cifra_tone|js-cifra-tone', re.I))
+        if tone_element:
+            original_tone = tone_element.text.strip()
+        else:
+            for span in soup.find_all(['span', 'a', 'div']):
+                text = span.get_text().strip()
+                if text in ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B', 
+                            'Cm', 'C#m', 'Dbm', 'Dm', 'D#m', 'Ebm', 'Em', 'Fm', 'F#m', 'Gbm', 'Gm', 'G#m', 'Abm', 'Am', 'A#m', 'Bbm', 'Bm']:
+                    original_tone = text
+                    break
+                    
+        if len(original_tone) > 5:
+            original_tone = "C"
+            
+        pre_tag = soup.find('pre')
+        if pre_tag:
+            content = pre_tag.get_text()
+        else:
+            return None, None, None, "Não foi possível encontrar a estrutura da cifra nesta página."
+            
+        return title or "Desconhecido", artist or "Desconhecido", original_tone, content
+    except Exception as e:
+        return None, None, None, f"Erro na importação: {str(e)}"
+
+# --- CONTROLE DE ESTADOS ---
+if 'selected_song_to_play' not in st.session_state:
+    st.session_state['selected_song_to_play'] = None
+
+if 'menu_opcao' not in st.session_state:
+    st.session_state['menu_opcao'] = "🎵 Palco / Tocar"
+
+# --- BUSCAR PASTAS DO BANCO ---
+conn = get_db_connection()
+cursor = conn.cursor()
+cursor.execute("SELECT id, name FROM folders")
+folders = cursor.fetchall()
+folder_dict = {f[1]: f[0] for f in folders}
+conn.close()
+
+# --- TÍTULO PRINCIPAL DO APP ---
+st.title("🎸 Cifras & Repertório")
+
+# --- MENU SUPERIOR DINÂMICO ---
+menu_options = ["🎵 Palco / Tocar", "📥 Adicionar Cifra", "📂 Pastas", "📚 Lista Geral"]
+
+if st.session_state.get('redirect_to_play', False):
+    st.session_state['menu_opcao'] = "🎵 Palco / Tocar"
+    st.session_state['redirect_to_play'] = False
+
+escolha = st.radio("Navegação", menu_options, horizontal=True, key="menu_opcao")
+
+st.markdown("---")
+
+# ----------------- ABA 1: VISUALIZAR / TOCAR -----------------
+if escolha == "🎵 Palco / Tocar":
+    st.header("Palco / Ensaio")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, artist, original_tone, content, folder_id FROM songs ORDER BY title ASC")
+    songs = cursor.fetchall()
+    conn.close()
+    
+    if not songs:
+        st.info("Nenhuma cifra cadastrada ainda. Vá na aba 'Adicionar Cifra'.")
+    else:
+        song_dict = {f"{s[1]} - {s[2]} (ID: {s[0]})": s for s in songs}
+        song_names = list(song_dict.keys())
+        
+        default_idx = 0
+        if st.session_state['selected_song_to_play']:
+            for idx, name in enumerate(song_names):
+                if f"ID: {st.session_state['selected_song_to_play']})" in name:
+                    default_idx = idx
+                    break
+            st.session_state['selected_song_to_play'] = None
+            
+        selected_song_name = st.selectbox("Escolher Música", song_names, index=default_idx)
+        
+        s_id, title, artist, orig_tone, content, folder_id = song_dict[selected_song_name]
+        
+        folder_name = "Geral"
+        for f_name, f_id in folder_dict.items():
+            if f_id == folder_id:
+                folder_name = f_name
+                
+        st.subheader(f"{title} - *{artist}*")
+        st.caption(f"📂 Pasta: {folder_name} | Tom Original: **{orig_tone or 'C'}**")
+        
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            if st.button("⬅️ Abaixar Semitom"):
+                st.session_state[f"trans_{s_id}"] = st.session_state.get(f"trans_{s_id}", 0) - 1
+        with col2:
+            if st.button("Subir Semitom ➡"):
+                st.session_state[f"trans_{s_id}"] = st.session_state.get(f"trans_{s_id}", 0) + 1
+        with col3:
+            chosen_tone = st.selectbox("Ou escolha o tom direto:", ["Original", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], key=f"tone_sel_{s_id}")
+            
+        current_trans = st.session_state.get(f"trans_{s_id}", 0)
+        
+        if chosen_tone == "Original":
+            current_trans = 0
+            st.session_state[f"trans_{s_id}"] = 0
+        elif orig_tone:
+            norm_orig = normalize_note(orig_tone)
+            norm_chosen = normalize_note(chosen_tone)
+            if norm_orig in NOTES_SHARP and norm_chosen in NOTES_SHARP:
+                idx_orig = NOTES_SHARP.index(norm_orig)
+                idx_chosen = NOTES_SHARP.index(norm_chosen)
+                diff = idx_chosen - idx_orig
+                current_trans = diff
+                st.session_state[f"trans_{s_id}"] = diff
+
+        st.markdown(f"**Transposição atual:** {current_trans:+d} semitons")
+        
+        transposed_content = transpose_content_text(content, current_trans)
+        
+        st.markdown("---")
+        st.code(transposed_content, language="text")
+
+# ----------------- ABA 2: ADICIONAR / IMPORTAR -----------------
+elif escolha == "📥 Adicionar Cifra":
+    st.header("Adicionar Cifra")
+    
+    import_type = st.radio("Método de Cadastro", ["Importar do Cifra Club (Link)", "Digitar / Colar Manualmente"], horizontal=True)
+    
+    folder_names = ["Nenhuma (Geral)"] + list(folder_dict.keys())
+    selected_folder = st.selectbox("Salvar na Pasta / Repertório", folder_names)
+    target_folder_id = folder_dict.get(selected_folder) if selected_folder != "Nenhuma (Geral)" else None
+    
+    if import_type == "Importar do Cifra Club (Link)":
+        url_input = st.text_input("Cole o link da música do Cifra Club")
+        if st.button("Puxar Cifra da Web"):
+            if url_input.strip():
+                with st.spinner("Buscando dados no Cifra Club..."):
+                    t, a, ot, c = fetch_cifraclub(url_input)
+                    st.session_state["temp_title"] = t
+                    st.session_state["temp_artist"] = a
+                    st.session_state["temp_tone"] = ot
+                    st.session_state["temp_content"] = c
+                    st.success(f"Sucesso! Música encontrada: {t} - {a} (Tom Original: {ot})")
+            else:
+                st.warning("Insira um link válido.")
+                
+        st.markdown("---")
+        song_title = st.text_input("Nome da Música", value=st.session_state.get("temp_title", ""))
+        song_artist = st.text_input("Artista / Banda", value=st.session_state.get("temp_artist", ""))
+        song_tone = st.text_input("Tom Original", value=st.session_state.get("temp_tone", "C"))
+        song_content = st.text_area("Cifra Completa", value=st.session_state.get("temp_content", ""), height=300)
+        
+        if st.button("Salvar no Repertório"):
+            if song_title and song_content:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO songs (title, artist, original_tone, current_tone, content, folder_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    (song_title, song_artist, song_tone, song_tone, song_content, target_folder_id)
+                )
+                conn.commit()
+                conn.close()
+                st.success("Cifra salva com sucesso no banco de dados!")
+            else:
+                st.warning("Preencha pelo menos o título e a cifra.")
+
+    else:
+        m_title = st.text_input("Nome da Música")
+        m_artist = st.text_input("Artista / Banda")
+        m_tone = st.text_input("Tom Original (ex: C, Am, G)", value="C")
+        m_content = st.text_area("Cole a Cifra com os acordes", height=300)
+        
+        if st.button("Salvar Cifra Manual"):
+            if m_title and m_content:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO songs (title, artist, original_tone, current_tone, content, folder_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    (m_title, m_artist, m_tone, m_tone, m_content, target_folder_id)
+                )
+                conn.commit()
+                conn.close()
+                st.success("Cifra manual salva com sucesso!")
+            else:
+                st.warning("Preencha o título e o conteúdo da cifra.")
+
+# ----------------- ABA 3: GERENCIAR PASTAS -----------------
+elif escolha == "📂 Pastas":
+    st.header("Gerenciar Pastas / Repertórios")
+    
+    new_folder_name = st.text_input("Nome da Nova Pasta (ex: Show Acústico, Reggae)")
+    if st.button("Criar Pasta"):
+        if new_folder_name.strip():
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO folders (name) VALUES (?)", (new_folder_name,))
+            conn.commit()
+            conn.close()
+            st.success(f"Pasta '{new_folder_name}' criada com sucesso!")
+            st.rerun()
+        else:
+            st.warning("Digite um nome válido.")
+            
+    st.markdown("---")
+    st.subheader("Pastas Existentes e Músicas Vinculadas")
+    if folders:
+        for f_id, f_name in folders:
+            with st.expander(f"📁 {f_name}"):
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, title, artist, original_tone FROM songs WHERE folder_id = ? ORDER BY title ASC", (f_id,))
+                folder_songs = cursor.fetchall()
+                conn.close()
+                
+                if folder_songs:
+                    for s_id, title, artist, tone in folder_songs:
+                        col_txt, col_play, col_del = st.columns([5, 1.3, 1.3])
+                        col_txt.markdown(f"<p style='font-size:13px; margin:0; line-height:30px;'>🎵 <b>{title}</b> - {artist} <span style='color:#aaa;'>(<b>{tone or 'C'}</b>)</span></p>", unsafe_allow_html=True)
+                        
+                        with col_play:
+                            if st.button("▶ Tocar", key=f"play_folder_song_{s_id}"):
+                                st.session_state['selected_song_to_play'] = s_id
+                                st.session_state['redirect_to_play'] = True
+                                st.rerun()
+                                
+                        with col_del:
+                            if st.button("🗑 Excluir", key=f"del_folder_song_{s_id}"):
+                                conn = get_db_connection()
+                                cursor = conn.cursor()
+                                cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))
+                                conn.commit()
+                                conn.close()
                                 st.success("Música excluída!")
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao excluir: {e}")
-
-    elif menu == "Adicionar / Importar":
-        st.subheader("🌐 Importar do Cifra Club ou Adicionar Manual")
-        
-        # Seção de Importação do Cifra Club
-        st.markdown("### Importação Automática")
-        url_cifra = st.text_input("Cole o link da cifra do Cifra Club:")
-        
-        # Seleção ou criação de pasta na importação
-        modo_pasta_imp = st.radio("Destino da Pasta", ["Selecionar existente", "Criar nova pasta"], key="modo_imp")
-        if modo_pasta_imp == "Selecionar existente":
-            pasta_import = st.selectbox("Pasta:", pastas_existentes, key="sel_pasta_imp")
-        else:
-            pasta_import = st.text_input("Nome da nova pasta:", value="Geral", key="nova_pasta_imp")
-        
-        if st.button("Importar Cifra"):
-            if not url_cifra:
-                st.warning("Por favor, insira um link válido.")
-            else:
-                try:
-                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                    resposta = requests.get(url_cifra, headers=headers)
-                    
-                    if resposta.status_code == 200:
-                        soup = BeautifulSoup(resposta.text, "html.parser")
-                        
-                        titulo_tag = soup.find("h1")
-                        artista_tag = soup.find("h2")
-                        cifra_tag = soup.find("pre")
-                        
-                        titulo = titulo_tag.text.strip() if titulo_tag else "Sem Título"
-                        artista = artista_tag.text.strip() if artista_tag else "Desconhecido"
-                        conteudo = cifra_tag.text if cifra_tag else "Não foi possível extrair o texto automaticamente."
-                        
-                        pasta_final = pasta_import.strip() if pasta_import else "Geral"
-                        
-                        novo_dado = {
-                            "title": titulo,
-                            "artist": artista,
-                            "folder": pasta_final,
-                            "content": conteudo,
-                            "user_id": user.id
-                        }
-                        supabase.table("songs").insert(novo_dado).execute()
-                        st.success(f"Cifra '{titulo}' importada com sucesso para a pasta '{pasta_final}'!")
-                        st.rerun()
-                    else:
-                        st.error("Não foi possível acessar a página informada. Verifique o link.")
-                except Exception as e:
-                    st.error(f"Erro ao importar: {e}")
-
-        st.markdown("---")
-        st.markdown("### Cadastro Manual")
-        with st.form("form_add_manual"):
-            titulo_m = st.text_input("Título da Música *")
-            artista_m = st.text_input("Artista / Banda")
-            
-            # Opção de pasta no cadastro manual
-            pasta_m = st.selectbox("Pasta / Repertório", pastas_existentes, key="sel_pasta_man")
-            
-            conteudo_m = st.text_area("Cifra e Letra", height=200, placeholder="Cole a cifra aqui...")
-            
-            salvar_m = st.form_submit_button("Salvar na Nuvem")
-            
-            if salvar_m:
-                if not titulo_m:
-                    st.warning("O título é obrigatório!")
                 else:
-                    try:
-                        novo_dado = {
-                            "title": titulo_m,
-                            "artist": artista_m,
-                            "folder": pasta_m,
-                            "content": conteudo_m,
-                            "user_id": user.id
-                        }
-                        supabase.table("songs").insert(novo_dado).execute()
-                        st.success(f"Cifra salva com sucesso na pasta '{pasta_m}'!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
+                    st.info("Nenhuma música nesta pasta.")
+                
+                if st.button("Apagar Pasta Inteira", key=f"del_folder_{f_id}"):
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE songs SET folder_id = NULL WHERE folder_id = ?", (f_id,))
+                    cursor.execute("DELETE FROM folders WHERE id = ?", (f_id,))
+                    conn.commit()
+                    conn.close()
+                    st.success("Pasta removida!")
+                    st.rerun()
+    else:
+        st.info("Nenhuma pasta criada ainda.")
 
-    elif menu == "Pastas / Repertórios":
-        st.subheader("📁 Gerenciamento de Pastas")
-        if not songs:
-            st.info("Cadastre algumas músicas para ver suas pastas aqui.")
-        else:
-            for p in pastas_existentes:
-                qtd = len([s for s in songs if s.get("folder") == p])
-                with st.expander(f"📁 {p} ({qtd} música(s))"):
-                    musicas_da_pasta = [s for s in songs if s.get("folder") == p]
-                    if musicas_da_pasta:
-                        for m in musicas_da_pasta:
-                            st.write(f"- **{m['title']}** — *{m.get('artist', 'Desconhecido')}*")
-                    else:
-                        st.write("Nenhuma música nesta pasta.")
+# ----------------- ABA 4: LISTA GERAL -----------------
+elif escolha == "📚 Lista Geral":
+    st.header("Lista Geral de Músicas")
+    
+    sort_by = st.radio("Ordenar por:", ["Ordem Alfabética de Música", "Ordem Alfabética de Artist"], horizontal=True)
+    order_query = "ORDER BY title ASC" if sort_by == "Ordem Alfabética de Música" else "ORDER BY artist ASC"
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT id, title, artist, original_tone, folder_id FROM songs {order_query}")
+    songs = cursor.fetchall()
+    conn.close()
+    
+    if songs:
+        st.write(f"Total de músicas cadastradas: **{len(songs)}**")
+        st.markdown("---")
+        for s_id, title, artist, tone, folder_id in songs:
+            folder_label = "Geral"
+            for f_name, f_id in folder_dict.items():
+                if f_id == folder_id:
+                    folder_label = f_name
+            
+            col_info, col_play, col_del = st.columns([5, 1.3, 1.3])
+            col_info.markdown(f"<p style='font-size:13px; margin:0; line-height:30px;'>🎵 <b>{title}</b> - {artist} <span style='color:#aaa;'>(<b>{tone or 'C'}</b> | 📂 {folder_label})</span></p>", unsafe_allow_html=True)
+            
+            with col_play:
+                if st.button("▶ Tocar", key=f"play_song_{s_id}"):
+                    st.session_state['selected_song_to_play'] = s_id
+                    st.session_state['redirect_to_play'] = True
+                    st.rerun()
+                    
+            with col_del:
+                if st.button("🗑 Excluir", key=f"del_song_{s_id}"):
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM songs WHERE id = ?", (s_id,))
+                    conn.commit()
+                    conn.close()
+                    st.success("Música excluída!")
+                    st.rerun()
+    else:
+        st.info("Nenhuma música cadastrada no sistema.")
